@@ -8,3 +8,4 @@ class ExpenseState(TypedDict, total=False):
     message: str
     intent_data: TransactionIntent
     response: str
+    transactions: list[dict]

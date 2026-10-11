@@ -1,46 +1,41 @@
 
-import json
+from langchain_core.messages import HumanMessage
 
 from app.ai.graph import expense_graph
 
 
 def main() -> None:
-    message = input("You: ").strip()
+    print("AI Expense Tracker")
+    print("Type 'exit' to quit.\n")
 
-    try:
-        result = expense_graph.invoke({"message": message})
+    while True:
+        try:
+            message = input("You: ").strip()
 
-        print("\nAI response:")
-        print(result.get("response", "No response generated."))
+            if message.lower() in {"exit", "quit"}:
+                print("Goodbye!")
+                break
 
-        intent_data = result.get("intent_data")
+            if not message:
+                continue
 
-        if intent_data:
-            print("\nExtracted intent:")
-            print(
-                json.dumps(
-                    intent_data.model_dump(),
-                    indent=2,
-                    ensure_ascii=False,
-                )
+            result = expense_graph.invoke(
+                {"messages": [HumanMessage(content=message)]}
             )
 
-            if intent_data.transactions:
-                print("\nTransactions identified:")
+            final_message = result["messages"][-1]
+            response = final_message.content
 
-                for index, transaction in enumerate(
-                    intent_data.transactions,
-                    start=1,
-                ):
-                    print(
-                        f"{index}. "
-                        f"Amount: {transaction.amount} | "
-                        f"Category: {transaction.category} | "
-                        f"Description: {transaction.description}"
-                    )
+            if isinstance(response, str):
+                print(f"\nAssistant: {response}\n")
+            else:
+                print(f"\nAssistant: {response!r}\n")
 
-    except Exception as error:
-        print(f"Workflow failed: {error}")
+        except KeyboardInterrupt:
+            print("\nGoodbye!")
+            break
+        except Exception as error:
+            print(f"\nRequest failed: {error}\n")
 
 
 if __name__ == "__main__":
