@@ -10,18 +10,30 @@ from app.tools.transaction_store import (
 
 
 def validate_batch(transactions: list[dict]) -> list[TransactionItem]:
-    """Validate every item before saving any transaction."""
-
+    """Validate every transaction before saving any of them."""
     if not transactions:
         raise ValueError("At least one transaction is required.")
 
     items = [
-        TransactionItem.model_validate(item)
-        for item in transactions
+        TransactionItem.model_validate(transaction)
+        for transaction in transactions
     ]
 
-    if any(item.amount is None for item in items):
-        raise ValueError("Every transaction must have an amount.")
+    for item in items:
+        if item.amount is None or item.amount <= 0:
+            raise ValueError(
+                "Every transaction must have a positive amount."
+            )
+
+        if not item.category:
+            raise ValueError(
+                "Every transaction needs a category."
+            )
+
+        if not item.description or not item.description.strip():
+            raise ValueError(
+                "Every transaction needs a description."
+            )
 
     return items
 
@@ -29,7 +41,6 @@ def validate_batch(transactions: list[dict]) -> list[TransactionItem]:
 @tool
 def record_expenses(transactions: list[dict]) -> dict:
     """Record one or more personal expenses."""
-
     items = validate_batch(transactions)
     created = add_transactions(items, "expense")
 
@@ -43,7 +54,6 @@ def record_expenses(transactions: list[dict]) -> dict:
 @tool
 def record_income(transactions: list[dict]) -> dict:
     """Record one or more personal income transactions."""
-
     items = validate_batch(transactions)
     created = add_transactions(items, "income")
 
@@ -56,12 +66,11 @@ def record_income(transactions: list[dict]) -> dict:
 
 @tool
 def get_transactions(transaction_type: str = "all") -> dict:
-    """List stored transactions by type: all, expense, or income."""
-
+    """List transactions: all, expense, or income."""
     if transaction_type not in {"all", "expense", "income"}:
         return {
             "success": False,
-            "error": "Transaction type must be all, expense, or income.",
+            "error": "Use all, expense, or income.",
         }
 
     selected_type = (
@@ -79,8 +88,7 @@ def get_transactions(transaction_type: str = "all") -> dict:
 
 @tool
 def calculate_balance() -> dict:
-    """Calculate total recorded income minus total recorded expenses."""
-
+    """Calculate recorded income minus recorded expenses."""
     return {
         "success": True,
         "balance": get_balance(),

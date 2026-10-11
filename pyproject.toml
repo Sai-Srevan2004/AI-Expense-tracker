@@ -12,6 +12,7 @@ dependencies = [
     "fastapi>=0.143.0",
     "langchain-groq>=1.1.3",
     "langgraph>=1.2.14",
+    "langgraph-checkpoint-mysql[pymysql]>=3.0.0",
     "pydantic-settings>=2.15.0",
     "pymysql>=1.2.3",
     "python-dotenv>=1.2.4",
