@@ -1,0 +1,25 @@
+[project]
+name = "app"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Sai-Srevan2004", email = "22bd1a057l@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "alembic>=1.20.0",
+    "fastapi>=0.143.0",
+    "pydantic-settings>=2.15.0",
+    "pymysql>=1.2.3",
+    "python-dotenv>=1.2.4",
+    "sqlalchemy>=2.1.4",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[project.scripts]
+app = "app:main"
+
+[build-system]
+requires = ["uv_build>=0.12.17,<0.13.0"]
+build-backend = "uv_build"
