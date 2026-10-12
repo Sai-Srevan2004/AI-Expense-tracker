@@ -156,6 +156,78 @@ def get_balance() -> float:
         return float(balance)
 
 
+def update_transaction(
+    transaction_id: str,
+    amount: float | None = None,
+    category: str | None = None,
+    description: str | None = None,
+    transaction_date: str | None = None,
+) -> dict | None:
+    """Update an existing transaction by its ID."""
+
+    with SessionLocal() as session:
+        try:
+            transaction = session.get(Transaction, transaction_id)
+
+            if transaction is None:
+                return None
+
+            if amount is not None:
+                if amount <= 0:
+                    raise ValueError("Amount must be positive.")
+
+                transaction.amount = Decimal(str(amount))
+
+            if category is not None:
+                if not category.strip():
+                    raise ValueError("Category cannot be empty.")
+
+                transaction.category = category
+
+            if description is not None:
+                if not description.strip():
+                    raise ValueError("Description cannot be empty.")
+
+                transaction.description = description.strip()
+
+            if transaction_date is not None:
+                transaction.transaction_date = parse_transaction_date(
+                    transaction_date
+                )
+
+            session.commit()
+            session.refresh(transaction)
+
+            return transaction_to_dict(transaction)
+
+        except Exception:
+            session.rollback()
+            raise
+
+
+def delete_transaction(transaction_id: str) -> dict | None:
+    """Delete an existing transaction by its ID."""
+
+    with SessionLocal() as session:
+        try:
+            transaction = session.get(Transaction, transaction_id)
+
+            if transaction is None:
+                return None
+
+            deleted_transaction = transaction_to_dict(transaction)
+
+            session.delete(transaction)
+            session.commit()
+
+            return deleted_transaction
+
+        except Exception:
+            session.rollback()
+            raise
+
+
+
 def clear_transactions() -> None:
     """Delete all transactions. Use only when intentionally resetting data."""
 
