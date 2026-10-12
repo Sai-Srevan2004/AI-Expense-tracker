@@ -12,7 +12,7 @@ from app.ai.graph import build_graph
 
 load_dotenv(override=True)
 
-THREAD_ID = "personal-expense-tracker"
+THREAD_ID = "user-1"
 
 
 def show_approval_request(request: dict) -> bool:

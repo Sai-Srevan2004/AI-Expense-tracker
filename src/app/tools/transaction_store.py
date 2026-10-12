@@ -2,7 +2,6 @@
 from datetime import date, timedelta
 from decimal import Decimal
 from uuid import uuid4
-
 from sqlalchemy import delete, func, select
 
 from app.database import SessionLocal
@@ -109,30 +108,94 @@ def add_transactions(
             raise
 
 
-def list_transactions(
-    transaction_type: str | None = None,
-) -> list[dict]:
-    """Retrieve transactions from MySQL, optionally by type."""
+def resolve_date_range(
+    date_filter: str | None,
+) -> tuple[date | None, date | None]:
+    """Convert common date filters into a start and end date."""
+    if not date_filter:
+        return None, None
 
-    if transaction_type not in {None, "expense", "income"}:
-        raise ValueError("Invalid transaction type.")
+    today = date.today()
+    value = date_filter.strip().lower()
 
-    statement = select(Transaction).order_by(
-        Transaction.created_at.desc()
+    if value == "today":
+        return today, today
+
+    if value == "yesterday":
+        yesterday = today - timedelta(days=1)
+        return yesterday, yesterday
+
+    if value == "this month":
+        start = today.replace(day=1)
+        return start, today
+
+    if value == "last month":
+        end = today.replace(day=1) - timedelta(days=1)
+        start = end.replace(day=1)
+        return start, end
+
+    if value == "this week":
+        start = today - timedelta(days=today.weekday())
+        end = start + timedelta(days=6)
+        return start, end
+
+    if value == "last week":
+        this_week_start = today - timedelta(days=today.weekday())
+        end = this_week_start - timedelta(days=1)
+        start = end - timedelta(days=6)
+        return start, end
+
+
+    raise ValueError(
+        "Unsupported date filter. Use today, yesterday, this week, "
+        "last week, this month, or last month."
     )
 
-    if transaction_type is not None:
-        statement = statement.where(
-            Transaction.type == transaction_type
-        )
+
+
+def list_transactions(
+    transaction_type: str | None = None,
+    category: str | None = None,
+    date_filter: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> list[dict]:
+    """Retrieve transactions using optional filters."""
+    filter_start, filter_end = resolve_date_range(date_filter)
+
+    if start_date:
+        filter_start = date.fromisoformat(start_date)
+
+    if end_date:
+        filter_end = date.fromisoformat(end_date)
 
     with SessionLocal() as session:
+        statement = select(Transaction)
+
+        if transaction_type:
+            statement = statement.where(
+                Transaction.type == transaction_type
+            )
+
+        if category:
+            statement = statement.where(
+                func.lower(Transaction.category) == category.strip().lower()
+            )
+
+        if filter_start:
+            statement = statement.where(
+                Transaction.transaction_date >= filter_start
+            )
+
+        if filter_end:
+            statement = statement.where(
+                Transaction.transaction_date <= filter_end
+            )
+
+        statement = statement.order_by(Transaction.created_at.desc())
         transactions = session.scalars(statement).all()
 
-        return [
-            transaction_to_dict(transaction)
-            for transaction in transactions
-        ]
+        return [transaction_to_dict(item) for item in transactions]
 
 
 def get_balance() -> float:
@@ -238,3 +301,160 @@ def clear_transactions() -> None:
         except Exception:
             session.rollback()
             raise
+
+
+
+def get_transaction_summary(
+    transaction_type: str = "expense",
+    date_filter: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> dict:
+    """Calculate transaction totals and counts for a date range."""
+    filter_start, filter_end = resolve_date_range(date_filter)
+
+    if start_date:
+        filter_start = date.fromisoformat(start_date)
+
+    if end_date:
+        filter_end = date.fromisoformat(end_date)
+
+    with SessionLocal() as session:
+        statement = select(
+            func.coalesce(func.sum(Transaction.amount), 0),
+            func.count(Transaction.id),
+        ).where(Transaction.type == transaction_type)
+
+        if filter_start:
+            statement = statement.where(
+                Transaction.transaction_date >= filter_start
+            )
+
+        if filter_end:
+            statement = statement.where(
+                Transaction.transaction_date <= filter_end
+            )
+
+        total, count = session.execute(statement).one()
+
+        return {
+            "type": transaction_type,
+            "total": float(total),
+            "count": count,
+            "start_date": (
+                filter_start.isoformat() if filter_start else None
+            ),
+            "end_date": filter_end.isoformat() if filter_end else None,
+        }
+
+
+
+def get_category_summary(
+    date_filter: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> list[dict]:
+    """Calculate expense totals grouped by category."""
+    filter_start, filter_end = resolve_date_range(date_filter)
+
+    if start_date:
+        filter_start = date.fromisoformat(start_date)
+
+    if end_date:
+        filter_end = date.fromisoformat(end_date)
+
+    with SessionLocal() as session:
+        statement = (
+            select(
+                Transaction.category,
+                func.sum(Transaction.amount).label("total"),
+                func.count(Transaction.id).label("count"),
+            )
+            .where(Transaction.type == "expense")
+            .group_by(Transaction.category)
+            .order_by(func.sum(Transaction.amount).desc())
+        )
+
+        if filter_start:
+            statement = statement.where(
+                Transaction.transaction_date >= filter_start
+            )
+
+        if filter_end:
+            statement = statement.where(
+                Transaction.transaction_date <= filter_end
+            )
+
+        rows = session.execute(statement).all()
+
+        return [
+            {
+                "category": category,
+                "total": float(total),
+                "count": count,
+            }
+            for category, total, count in rows
+        ]
+
+
+def compare_monthly_transactions(
+    transaction_type: str = "expense",
+) -> dict:
+    """Compare this month's total with last month's total."""
+    today = date.today()
+
+    this_month_start = today.replace(day=1)
+    last_month_end = this_month_start - timedelta(days=1)
+    last_month_start = last_month_end.replace(day=1)
+
+    with SessionLocal() as session:
+        statement = (
+            select(
+                func.sum(Transaction.amount),
+                func.count(Transaction.id),
+            )
+            .where(Transaction.type == transaction_type)
+        )
+
+        current_total, current_count = session.execute(
+            statement.where(
+                Transaction.transaction_date >= this_month_start,
+                Transaction.transaction_date <= today,
+            )
+        ).one()
+
+        previous_total, previous_count = session.execute(
+            statement.where(
+                Transaction.transaction_date >= last_month_start,
+                Transaction.transaction_date <= last_month_end,
+            )
+        ).one()
+
+        current_total = float(current_total or 0)
+        previous_total = float(previous_total or 0)
+
+        difference = current_total - previous_total
+
+        percentage_change = (
+            (difference / previous_total) * 100
+            if previous_total
+            else None
+        )
+
+        return {
+            "type": transaction_type,
+            "this_month": {
+                "start_date": this_month_start.isoformat(),
+                "end_date": today.isoformat(),
+                "total": current_total,
+                "count": current_count,
+            },
+            "last_month": {
+                "start_date": last_month_start.isoformat(),
+                "end_date": last_month_end.isoformat(),
+                "total": previous_total,
+                "count": previous_count,
+            },
+            "difference": difference,
+            "percentage_change": percentage_change,
+        }

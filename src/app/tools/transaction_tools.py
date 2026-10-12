@@ -6,12 +6,16 @@ from app.schemas.intent import TransactionItem
 from langgraph.types import interrupt
 
 from app.tools.transaction_store import (
+    get_transaction_summary,
     add_transactions,
     get_balance,
     list_transactions,
     update_transaction as update_transaction_record,
     delete_transaction as delete_transaction_record,
+    get_category_summary,
+    compare_monthly_transactions
 )
+
 
 
 def validate_batch(transactions: list[dict]) -> list[TransactionItem]:
@@ -69,26 +73,51 @@ def record_income(transactions: list[dict]) -> dict:
     }
 
 
+
 @tool
-def get_transactions(transaction_type: str = "all") -> dict:
-    """List transactions: all, expense, or income."""
+def get_transactions(
+    transaction_type: str = "all",
+    category: str | None = None,
+    date_filter: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> dict:
+    """Retrieve transactions filtered by type, category, and date.
+
+    date_filter supports today, yesterday, this week, last week,
+    this month, or last month.
+    Use start_date and end_date for a custom date range in YYYY-MM-DD format.
+    """
     if transaction_type not in {"all", "expense", "income"}:
         return {
             "success": False,
             "error": "Use all, expense, or income.",
         }
 
-    selected_type = (
-        None if transaction_type == "all" else transaction_type
-    )
+    try:
+        selected_type = (
+            None if transaction_type == "all" else transaction_type
+        )
 
-    transactions = list_transactions(selected_type)
+        transactions = list_transactions(
+            transaction_type=selected_type,
+            category=category,
+            date_filter=date_filter,
+            start_date=start_date,
+            end_date=end_date,
+        )
 
-    return {
-        "success": True,
-        "count": len(transactions),
-        "transactions": transactions,
-    }
+        return {
+            "success": True,
+            "count": len(transactions),
+            "transactions": transactions,
+        }
+
+    except (ValueError, TypeError) as error:
+        return {
+            "success": False,
+            "error": str(error),
+        }
 
 
 @tool
@@ -222,3 +251,87 @@ def delete_transaction_tool(transaction_id: str) -> dict:
         "message": "Transaction deleted successfully.",
         "transaction": deleted,
     }
+
+
+@tool
+def summarize_transactions(
+    transaction_type: str = "expense",
+    date_filter: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> dict:
+    """Calculate the total amount and count of income or expenses.
+
+    Use this for questions such as:
+    - How much did I spend this month?
+    - How much income did I earn last week?
+    - What were my total expenses between two dates?
+
+    transaction_type must be expense or income.
+    date_filter supports today, yesterday, this week, last week,
+    this month, or last month.
+    Use start_date and end_date for a custom date range (YYYY-MM-DD).
+    """
+    if transaction_type not in {"expense", "income"}:
+        return {
+            "success": False,
+            "error": "transaction_type must be expense or income.",
+        }
+
+    try:
+        summary = get_transaction_summary(
+            transaction_type=transaction_type,
+            date_filter=date_filter,
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+        return {"success": True, **summary}
+
+    except (ValueError, TypeError) as error:
+        return {"success": False, "error": str(error)}
+
+
+
+@tool
+def summarize_expenses_by_category(
+    date_filter: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> dict:
+    """Break down expenses by category for a date range.
+
+    Use for questions about spending by category or the biggest
+    spending category. Supports today, yesterday, this week,
+    last week, this month, and last month.
+    """
+    try:
+        categories = get_category_summary(
+            date_filter=date_filter,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        return {
+            "success": True,
+            "categories": categories,
+        }
+    except (ValueError, TypeError) as error:
+        return {"success": False, "error": str(error)}
+
+
+@tool
+def compare_monthly_summary(
+    transaction_type: str = "expense",
+) -> dict:
+    """Compare this month's and last month's income or expenses."""
+    if transaction_type not in {"expense", "income"}:
+        return {
+            "success": False,
+            "error": "transaction_type must be expense or income.",
+        }
+
+    try:
+        result = compare_monthly_transactions(transaction_type)
+        return {"success": True, **result}
+    except (ValueError, TypeError) as error:
+        return {"success": False, "error": str(error)}
